@@ -1,0 +1,20 @@
+# Environment variables — never commit secrets
+.env
+.env.*
+
+# Dependencies
+node_modules/
+
+# macOS
+.DS_Store
+
+# Playwright MCP artifacts
+.playwright-mcp/
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
