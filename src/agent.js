@@ -191,7 +191,7 @@ function trimContestList(contests, max = 300) {
 // A "simulation" is a VIRTUAL participation in a gym contest (contestId > 100000).
 // Regular CF rounds done virtually are excluded — those are a different concept.
 // Each unique (contestId, startTimeSeconds) pair = one simulation session.
-async function getGymSimulations(handle, limit = 10) {
+export async function getGymSimulations(handle, limit = 10) {
   const sessions = new Map();
   let from = 1;
   const pageSize = 100;
@@ -316,7 +316,7 @@ function trimProblems(data) {
 
 // ── Tool execution ────────────────────────────────────────────────────────────
 
-async function executeTool(name, input) {
+export async function executeTool(name, input) {
   switch (name) {
     case 'get_user_info':
       return cf.getUserInfo(input.handles);
