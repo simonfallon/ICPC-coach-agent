@@ -1,5 +1,7 @@
 # Adding a New Tool
 
+> **API reference:** See [CodeforcesAPIMethods.md](CodeforcesAPIMethods.md) for all available endpoints and their parameters, and [CodeforcesAPIReturnObjects.md](CodeforcesAPIReturnObjects.md) for field definitions of every return type (`Contest`, `Submission`, `Party`, `RanklistRow`, etc.).
+
 Two categories of tools exist:
 
 - **Thin wrapper** — Claude calls it, gets raw CF API data back (e.g., `get_user_info`).
@@ -81,7 +83,7 @@ export async function getMyTool(handle: string, limit = 10): Promise<MyToolResul
 ```
 
 **Pagination rules:**
-- Always use `PAGE_SIZE = 500` for `getUserSubmissions`.
+- Always use `PAGE_SIZE = 1000` for `getUserSubmissions`.
 - Break early on a timestamp cutoff (`creationTimeSeconds < cutoff`).
 - Break when `subs.length < PAGE_SIZE` (last page).
 - Gym IDs: `contestId > 100000`. Regular CF rounds: `contestId ≤ 100000`.
