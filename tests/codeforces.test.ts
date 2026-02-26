@@ -13,11 +13,12 @@ import {
 } from '../src/codeforces.js';
 
 // Wrap calls so a network error skips the test rather than failing it
-async function skipOnNetworkError(fn) {
+async function skipOnNetworkError<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
   } catch (err) {
-    if (err.message?.includes('fetch') || err.code === 'ENOTFOUND' || err.message?.includes('network')) {
+    const e = err as { message?: string; code?: string };
+    if (e.message?.includes('fetch') || e.code === 'ENOTFOUND' || e.message?.includes('network')) {
       return null; // caller will skip
     }
     throw err;
@@ -39,7 +40,7 @@ describe('Codeforces API — integration', { timeout: 15000 }, () => {
     });
 
     it('returns multiple users when given multiple handles', async () => {
-      const result = await skipOnNetworkError(() => getUserInfo(['tourist', 'radewoosh']));
+      const result = await skipOnNetworkError(() => getUserInfo(['tourist', 'Radewoosh']));
       if (!result) return;
       expect(result).toHaveLength(2);
       const handles = result.map(u => u.handle.toLowerCase());

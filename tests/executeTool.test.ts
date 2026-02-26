@@ -5,6 +5,8 @@ vi.mock('../src/codeforces.js');
 import * as cf from '../src/codeforces.js';
 import { executeTool } from '../src/agent.js';
 
+const mock = vi.mocked(cf);
+
 const FAKE_USER = [{ handle: 'tourist', rating: 3979, rank: 'legendary grandmaster' }];
 const FAKE_RATING = [{ contestId: 1, newRating: 3000, oldRating: 2900, rank: 5 }];
 const FAKE_SUBS = Array.from({ length: 10 }, (_, i) => ({
@@ -29,97 +31,97 @@ const FAKE_RATED = Array.from({ length: 10 }, (_, i) => ({
 beforeEach(() => {
   vi.resetAllMocks();
   // Default stubs — each test overrides what it needs
-  cf.getUserInfo.mockResolvedValue(FAKE_USER);
-  cf.getUserRating.mockResolvedValue(FAKE_RATING);
-  cf.getUserSubmissions.mockResolvedValue(FAKE_SUBS);
-  cf.getContestList.mockResolvedValue(FAKE_CONTESTS);
-  cf.getContestStandings.mockResolvedValue(FAKE_STANDINGS);
-  cf.getContestStatus.mockResolvedValue(FAKE_STATUS);
-  cf.getContestRatingChanges.mockResolvedValue(FAKE_RATING_CHANGES);
-  cf.getProblems.mockResolvedValue(FAKE_PROBLEMS);
-  cf.getRecentActions.mockResolvedValue(FAKE_ACTIONS);
-  cf.getRatedList.mockResolvedValue(FAKE_RATED);
+  mock.getUserInfo.mockResolvedValue(FAKE_USER as any);
+  mock.getUserRating.mockResolvedValue(FAKE_RATING as any);
+  mock.getUserSubmissions.mockResolvedValue(FAKE_SUBS as any);
+  mock.getContestList.mockResolvedValue(FAKE_CONTESTS as any);
+  mock.getContestStandings.mockResolvedValue(FAKE_STANDINGS as any);
+  mock.getContestStatus.mockResolvedValue(FAKE_STATUS as any);
+  mock.getContestRatingChanges.mockResolvedValue(FAKE_RATING_CHANGES as any);
+  mock.getProblems.mockResolvedValue(FAKE_PROBLEMS as any);
+  mock.getRecentActions.mockResolvedValue(FAKE_ACTIONS as any);
+  mock.getRatedList.mockResolvedValue(FAKE_RATED as any);
 });
 
 describe('executeTool — dispatch', () => {
 
   it('get_user_info calls getUserInfo with handles array', async () => {
     await executeTool('get_user_info', { handles: ['tourist', 'radewoosh'] });
-    expect(cf.getUserInfo).toHaveBeenCalledWith(['tourist', 'radewoosh']);
+    expect(mock.getUserInfo).toHaveBeenCalledWith(['tourist', 'radewoosh']);
   });
 
   it('get_user_rating calls getUserRating with handle', async () => {
     await executeTool('get_user_rating', { handle: 'tourist' });
-    expect(cf.getUserRating).toHaveBeenCalledWith('tourist');
+    expect(mock.getUserRating).toHaveBeenCalledWith('tourist');
   });
 
   it('get_user_submissions calls with defaults (count=200, from=1)', async () => {
     await executeTool('get_user_submissions', { handle: 'tourist' });
-    expect(cf.getUserSubmissions).toHaveBeenCalledWith('tourist', 200, 1);
+    expect(mock.getUserSubmissions).toHaveBeenCalledWith('tourist', 200, 1);
   });
 
   it('get_contest_list passes gym=true when specified', async () => {
     await executeTool('get_contest_list', { gym: true });
-    expect(cf.getContestList).toHaveBeenCalledWith(true);
+    expect(mock.getContestList).toHaveBeenCalledWith(true);
   });
 
   it('get_contest_list defaults to gym=false', async () => {
     await executeTool('get_contest_list', {});
-    expect(cf.getContestList).toHaveBeenCalledWith(false);
+    expect(mock.getContestList).toHaveBeenCalledWith(false);
   });
 
   it('get_contest_standings passes all params', async () => {
     await executeTool('get_contest_standings', { contestId: 42, from: 5, count: 20, handles: ['a', 'b'] });
-    expect(cf.getContestStandings).toHaveBeenCalledWith(42, 5, 20, ['a', 'b']);
+    expect(mock.getContestStandings).toHaveBeenCalledWith(42, 5, 20, ['a', 'b']);
   });
 
   it('get_contest_standings uses defaults for optional params', async () => {
     await executeTool('get_contest_standings', { contestId: 42 });
-    expect(cf.getContestStandings).toHaveBeenCalledWith(42, 1, 10, []);
+    expect(mock.getContestStandings).toHaveBeenCalledWith(42, 1, 10, []);
   });
 
   it('get_contest_status passes contestId, handle, count', async () => {
     await executeTool('get_contest_status', { contestId: 1, handle: 'tourist', count: 5 });
-    expect(cf.getContestStatus).toHaveBeenCalledWith(1, 'tourist', 5);
+    expect(mock.getContestStatus).toHaveBeenCalledWith(1, 'tourist', 5);
   });
 
   it('get_contest_rating_changes passes contestId', async () => {
     await executeTool('get_contest_rating_changes', { contestId: 1 });
-    expect(cf.getContestRatingChanges).toHaveBeenCalledWith(1);
+    expect(mock.getContestRatingChanges).toHaveBeenCalledWith(1);
   });
 
   it('get_problems passes tags and name', async () => {
     await executeTool('get_problems', { tags: ['dp', 'graphs'], problemsetName: 'Codeforces' });
-    expect(cf.getProblems).toHaveBeenCalledWith(['dp', 'graphs'], 'Codeforces');
+    expect(mock.getProblems).toHaveBeenCalledWith(['dp', 'graphs'], 'Codeforces');
   });
 
   it('get_problems uses empty defaults', async () => {
     await executeTool('get_problems', {});
-    expect(cf.getProblems).toHaveBeenCalledWith([], '');
+    expect(mock.getProblems).toHaveBeenCalledWith([], '');
   });
 
   it('get_recent_actions passes maxCount', async () => {
     await executeTool('get_recent_actions', { maxCount: 50 });
-    expect(cf.getRecentActions).toHaveBeenCalledWith(50);
+    expect(mock.getRecentActions).toHaveBeenCalledWith(50);
   });
 
   it('get_rated_list passes activeOnly', async () => {
     await executeTool('get_rated_list', { activeOnly: false });
-    expect(cf.getRatedList).toHaveBeenCalledWith(false);
+    expect(mock.getRatedList).toHaveBeenCalledWith(false);
   });
 
   it('get_gym_simulations routes to getGymSimulations (returns handle + gyms)', async () => {
     // CF mocks return empty data → fast path, no standings calls
-    cf.getUserSubmissions.mockResolvedValue([]);
-    const result = await executeTool('get_gym_simulations', { handle: 'automac', limit: 5 });
+    mock.getUserSubmissions.mockResolvedValue([]);
+    const result = await executeTool('get_gym_simulations', { handle: 'automac', limit: 5 }) as any;
     expect(result.handle).toBe('automac');
     expect(Array.isArray(result.gyms)).toBe(true);
   });
 
   it('get_gym_simulations uses default limit of 10 when not specified', async () => {
-    cf.getUserSubmissions.mockResolvedValue([]);
+    mock.getUserSubmissions.mockResolvedValue([]);
     // Just ensure no throw with missing limit
-    const result = await executeTool('get_gym_simulations', { handle: 'someone' });
+    const result = await executeTool('get_gym_simulations', { handle: 'someone' }) as any;
     expect(result.handle).toBe('someone');
   });
 
@@ -137,8 +139,8 @@ describe('executeTool — result trimming', () => {
       programmingLanguage: 'C++', problem: { contestId: 100, index: 'A', name: 'P', rating: 1500 },
       author: { participantType: 'CONTESTANT' },
     }));
-    cf.getUserSubmissions.mockResolvedValue(bigList);
-    const result = await executeTool('get_user_submissions', { handle: 'tourist' });
+    mock.getUserSubmissions.mockResolvedValue(bigList as any);
+    const result = await executeTool('get_user_submissions', { handle: 'tourist' }) as unknown[];
     expect(result.length).toBeLessThanOrEqual(200);
   });
 
@@ -147,8 +149,8 @@ describe('executeTool — result trimming', () => {
       id: i, name: `Contest ${i}`, type: 'CF', phase: 'FINISHED',
       startTimeSeconds: 1700000000, durationSeconds: 7200,
     }));
-    cf.getContestList.mockResolvedValue(bigList);
-    const result = await executeTool('get_contest_list', {});
+    mock.getContestList.mockResolvedValue(bigList as any);
+    const result = await executeTool('get_contest_list', {}) as unknown[];
     expect(result.length).toBeLessThanOrEqual(300);
   });
 
@@ -156,8 +158,8 @@ describe('executeTool — result trimming', () => {
     const bigList = Array.from({ length: 300 }, (_, i) => ({
       handle: `user${i}`, rating: 3000 - i, maxRating: 3100, rank: 'gm', country: 'RU',
     }));
-    cf.getRatedList.mockResolvedValue(bigList);
-    const result = await executeTool('get_rated_list', {});
+    mock.getRatedList.mockResolvedValue(bigList as any);
+    const result = await executeTool('get_rated_list', {}) as unknown[];
     expect(result.length).toBeLessThanOrEqual(100);
   });
 

@@ -3,6 +3,7 @@
 // Skipped entirely when ANTHROPIC_API_KEY is not set.
 import { vi, describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import 'dotenv/config';
+import type { SSEEvent } from '../src/types.js';
 
 const HAS_API_KEY = !!process.env.ANTHROPIC_API_KEY;
 
@@ -11,26 +12,28 @@ vi.mock('../src/codeforces.js');
 import * as cf from '../src/codeforces.js';
 import { streamAgent } from '../src/agent.js';
 
+const mock = vi.mocked(cf);
+
 // Minimal CF stubs — tools return fast empty data so Claude gets a result and finishes
 beforeEach(() => {
   vi.resetAllMocks();
-  cf.getUserInfo.mockResolvedValue([{ handle: 'tourist', rating: 3979, rank: 'legendary grandmaster' }]);
-  cf.getUserRating.mockResolvedValue([{ contestId: 1, newRating: 3000, oldRating: 2900, rank: 5 }]);
-  cf.getUserSubmissions.mockResolvedValue([]);
-  cf.getContestList.mockResolvedValue([]);
-  cf.getContestStandings.mockResolvedValue({ rows: [], problems: [] });
-  cf.getProblems.mockResolvedValue({ problems: [], problemStatistics: [] });
-  cf.getRecentActions.mockResolvedValue([]);
-  cf.getRatedList.mockResolvedValue([]);
+  mock.getUserInfo.mockResolvedValue([{ handle: 'tourist', rating: 3979, rank: 'legendary grandmaster' }] as any);
+  mock.getUserRating.mockResolvedValue([{ contestId: 1, newRating: 3000, oldRating: 2900, rank: 5 }] as any);
+  mock.getUserSubmissions.mockResolvedValue([]);
+  mock.getContestList.mockResolvedValue([]);
+  mock.getContestStandings.mockResolvedValue({ rows: [], problems: [] } as any);
+  mock.getProblems.mockResolvedValue({ problems: [], problemStatistics: [] });
+  mock.getRecentActions.mockResolvedValue([]);
+  mock.getRatedList.mockResolvedValue([]);
 });
 
 // Helper: run streamAgent and collect all SSE events
-async function runQuery(query) {
-  const events = [];
+async function runQuery(query: string): Promise<SSEEvent[]> {
+  const events: SSEEvent[] = [];
   const res = {
-    write: (chunk) => {
+    write: (chunk: string) => {
       try {
-        const json = JSON.parse(chunk.replace(/^data: /, ''));
+        const json = JSON.parse(chunk.replace(/^data: /, '')) as SSEEvent;
         events.push(json);
       } catch { /* ignore malformed chunks */ }
     },
@@ -40,8 +43,10 @@ async function runQuery(query) {
 }
 
 // Extract tool_call event names from the event stream
-function toolsUsed(events) {
-  return events.filter(e => e.type === 'tool_call').map(e => e.name);
+function toolsUsed(events: SSEEvent[]): string[] {
+  return events
+    .filter((e): e is Extract<SSEEvent, { type: 'tool_call' }> => e.type === 'tool_call')
+    .map(e => e.name);
 }
 
 describe('Tool selection traces', { timeout: 30000 }, () => {

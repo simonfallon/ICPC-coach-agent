@@ -1,19 +1,21 @@
 import 'dotenv/config';
 import express from 'express';
 import { streamAgent } from './src/agent.js';
+import type { ConversationMessage } from './src/types.js';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT ?? 3000;
 
 app.use(express.json());
 app.use(express.static('public'));
 
 // Chat endpoint — streams SSE back to the client
 app.post('/api/chat', async (req, res) => {
-  const { messages, model } = req.body;
+  const { messages, model } = req.body as { messages: ConversationMessage[]; model?: string };
 
   if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'messages array is required' });
+    res.status(400).json({ error: 'messages array is required' });
+    return;
   }
 
   res.setHeader('Content-Type', 'text/event-stream');

@@ -11,12 +11,14 @@ vi.mock('../src/codeforces.js');
 import * as cf from '../src/codeforces.js';
 import { getGymSimulations } from '../src/agent.js';
 
+const mock = vi.mocked(cf);
+
 // Default happy-path mocks — tests can override per-case
 beforeEach(() => {
   vi.resetAllMocks();
-  cf.getUserSubmissions.mockResolvedValue(SUBS_ONE_SIM);
-  cf.getContestList.mockResolvedValue(GYM_LIST);
-  cf.getContestStandings.mockResolvedValue(STANDINGS_105789);
+  mock.getUserSubmissions.mockResolvedValue(SUBS_ONE_SIM as any);
+  mock.getContestList.mockResolvedValue(GYM_LIST as any);
+  mock.getContestStandings.mockResolvedValue(STANDINGS_105789 as any);
 });
 
 describe('getGymSimulations', () => {
@@ -78,7 +80,7 @@ describe('getGymSimulations', () => {
     });
 
     it('returns null rank/solved when standings call throws, without crashing', async () => {
-      cf.getContestStandings.mockRejectedValue(new Error('CF API error'));
+      mock.getContestStandings.mockRejectedValue(new Error('CF API error'));
       const { gyms } = await getGymSimulations('automac', 10);
       expect(gyms[0].rank).toBeNull();
       expect(gyms[0].solved).toBeNull();
@@ -107,7 +109,7 @@ describe('getGymSimulations', () => {
     });
 
     it('returns empty gyms array when no gym submissions exist', async () => {
-      cf.getUserSubmissions.mockResolvedValue([]);
+      mock.getUserSubmissions.mockResolvedValue([]);
       const result = await getGymSimulations('nobody', 10);
       expect(result.gyms).toEqual([]);
     });
@@ -115,20 +117,20 @@ describe('getGymSimulations', () => {
 
   describe('ordering and limit', () => {
     it('sorts newest-first when two sessions exist', async () => {
-      cf.getUserSubmissions.mockResolvedValue(SUBS_TWO_SIMS);
-      cf.getContestList.mockResolvedValue(GYM_LIST);
-      cf.getContestStandings
-        .mockResolvedValueOnce(STANDINGS_105789) // first call = gym 105789
-        .mockResolvedValueOnce(STANDINGS_106193); // second call = gym 106193
+      mock.getUserSubmissions.mockResolvedValue(SUBS_TWO_SIMS as any);
+      mock.getContestList.mockResolvedValue(GYM_LIST as any);
+      mock.getContestStandings
+        .mockResolvedValueOnce(STANDINGS_105789 as any) // first call = gym 105789
+        .mockResolvedValueOnce(STANDINGS_106193 as any); // second call = gym 106193
       const { gyms } = await getGymSimulations('automac', 10);
       expect(gyms[0].link).toContain('105789'); // T1 (newer) first
       expect(gyms[1].link).toContain('106193'); // T2 (older) second
     });
 
     it('respects the limit parameter', async () => {
-      cf.getUserSubmissions.mockResolvedValue(SUBS_TWO_SIMS);
-      cf.getContestList.mockResolvedValue(GYM_LIST);
-      cf.getContestStandings.mockResolvedValue(STANDINGS_105789);
+      mock.getUserSubmissions.mockResolvedValue(SUBS_TWO_SIMS as any);
+      mock.getContestList.mockResolvedValue(GYM_LIST as any);
+      mock.getContestStandings.mockResolvedValue(STANDINGS_105789 as any);
       const { gyms } = await getGymSimulations('automac', 1);
       expect(gyms.length).toBe(1);
       expect(gyms[0].link).toContain('105789'); // newest only
@@ -137,21 +139,21 @@ describe('getGymSimulations', () => {
 
   describe('gym metadata', () => {
     it('falls back to Gym #id name when contestId not in gym list', async () => {
-      cf.getContestList.mockResolvedValue([]); // empty gym list
+      mock.getContestList.mockResolvedValue([]); // empty gym list
       const { gyms } = await getGymSimulations('automac', 10);
       expect(gyms[0].name).toBe('Gym #105789');
     });
 
     it('returns null difficulty when not set in gym list', async () => {
-      cf.getContestList.mockResolvedValue([
-        { id: 105789, name: 'Test Gym', durationSeconds: 18000 }, // no difficulty field
+      mock.getContestList.mockResolvedValue([
+        { id: 105789, name: 'Test Gym', durationSeconds: 18000 } as any,
       ]);
       const { gyms } = await getGymSimulations('automac', 10);
       expect(gyms[0].difficulty).toBeNull();
     });
 
     it('uses handle as sole member when author.members is empty', async () => {
-      cf.getUserSubmissions.mockResolvedValue([{
+      mock.getUserSubmissions.mockResolvedValue([{
         contestId: 105789,
         creationTimeSeconds: T1,
         author: {
@@ -160,7 +162,7 @@ describe('getGymSimulations', () => {
           teamName: null,
           members: [],
         },
-      }]);
+      }] as any);
       const { gyms } = await getGymSimulations('solo_user', 10);
       expect(gyms[0].members).toEqual(['solo_user']);
     });

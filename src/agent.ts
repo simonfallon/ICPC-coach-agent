@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import * as cf from './codeforces.js';
+import type {
+  CFSubmission, CFContest, CFUser, CFProblemsResponse,
+  SSEEvent, SSEWriter, ConversationMessage, GymSimulationsResult,
+} from './types.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -21,7 +25,7 @@ Always present data in a helpful, organized way. If a user asks for "last N" ite
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
-const TOOLS = [
+const TOOLS: Anthropic.Tool[] = [
   {
     name: 'get_user_info',
     description: 'Get profile information for one or more Codeforces users (rating, rank, country, etc.)',
@@ -164,7 +168,7 @@ const TOOLS = [
 
 // ── Result trimming — keeps responses within Claude's context budget ──────────
 
-function trimSubmissions(subs, max = 200) {
+function trimSubmissions(subs: CFSubmission[], max = 200) {
   return subs.slice(0, max).map(s => ({
     id: s.id,
     contestId: s.contestId,
@@ -176,7 +180,7 @@ function trimSubmissions(subs, max = 200) {
   }));
 }
 
-function trimContestList(contests, max = 300) {
+function trimContestList(contests: CFContest[], max = 300) {
   return contests.slice(0, max).map(c => ({
     id: c.id,
     name: c.name,
@@ -187,12 +191,26 @@ function trimContestList(contests, max = 300) {
   }));
 }
 
+interface SimSession {
+  contestId: number;
+  startTimeSeconds: number;
+  teamName: string | null;
+  members: string[];
+}
+
+interface StandingsEntry {
+  rank: number;
+  total: number | null;
+  solved: number;
+  totalProblems: number;
+}
+
 // Server-side gym simulation lookup.
 // A "simulation" is a VIRTUAL participation in a gym contest (contestId > 100000).
 // Regular CF rounds done virtually are excluded — those are a different concept.
 // Each unique (contestId, startTimeSeconds) pair = one simulation session.
-export async function getGymSimulations(handle, limit = 10) {
-  const sessions = new Map();
+export async function getGymSimulations(handle: string, limit = 10): Promise<GymSimulationsResult> {
+  const sessions = new Map<string, SimSession>();
   let from = 1;
   const pageSize = 100;
   const maxPages = 20; // scan up to 2000 submissions
@@ -202,7 +220,7 @@ export async function getGymSimulations(handle, limit = 10) {
     if (!subs.length) break;
 
     for (const s of subs) {
-      const isGym = s.contestId > 100000;
+      const isGym = (s.contestId ?? 0) > 100000;
       const isVirtual = s.author?.participantType === 'VIRTUAL';
       if (!isGym || !isVirtual) continue;
 
@@ -210,7 +228,7 @@ export async function getGymSimulations(handle, limit = 10) {
       const key = `${s.contestId}_${startTime}`;
       if (!sessions.has(key)) {
         sessions.set(key, {
-          contestId: s.contestId,
+          contestId: s.contestId!,
           startTimeSeconds: startTime,
           teamName: s.author?.teamName ?? null,
           // sort alphabetically up-front
@@ -233,32 +251,31 @@ export async function getGymSimulations(handle, limit = 10) {
 
   // Resolve contest names from gym list
   const gymList = await cf.getContestList(true);
-  const gymMap = {};
+  const gymMap: Record<number, CFContest> = {};
   for (const g of gymList) if (topIds.has(g.id)) gymMap[g.id] = g;
 
   // Fetch standings per simulation to get rank, total participants, and problems solved.
   // We fetch unfiltered (no handles) so we also get the total from the last row's rank.
   const CAP = 3000;
-  const standingsCache = new Map();
+  const standingsCache = new Map<string, StandingsEntry>();
   for (const sim of top) {
     try {
-      const data = await cf.getContestStandings(
-        sim.contestId, 1, CAP, [], /* showUnofficial= */ true,
-      );
+      const data = await cf.getContestStandings(sim.contestId, 1, CAP, [], true);
       const rows = data.rows ?? [];
-      // Locate the team's row by matching the virtual session start time, then by members
-      const byMember = (r) => r.party?.members?.some(m => sim.members.includes(m.handle));
+      // Locate the team's row by matching the virtual session start time AND a member handle.
+      // startTimeSeconds alone is ambiguous — multiple teams can start at the same second,
+      // and rows are sorted by rank, so without the member check we'd match the wrong team.
+      const byMember = (r: typeof rows[0]) => r.party?.members?.some(m => sim.members.includes(m.handle));
       const teamRow =
         rows.find(r => r.party?.startTimeSeconds === sim.startTimeSeconds && byMember(r)) ??
         rows.find(byMember);
       if (teamRow) {
         const solved = (teamRow.problemResults ?? []).filter(p => (p.points ?? 0) > 0).length;
         const lastRank = rows.at(-1)?.rank ?? rows.length;
-        // If we got fewer rows than the cap, lastRank is the true total; otherwise cap+
         const total = rows.length < CAP ? lastRank : null;
         standingsCache.set(`${sim.contestId}_${sim.startTimeSeconds}`, {
           rank: teamRow.rank,
-          total,          // null means >${CAP}
+          total,
           solved,
           totalProblems: (data.problems ?? []).length,
         });
@@ -290,7 +307,7 @@ export async function getGymSimulations(handle, limit = 10) {
   };
 }
 
-function trimRatedList(users, max = 100) {
+function trimRatedList(users: CFUser[], max = 100) {
   return users.slice(0, max).map(u => ({
     handle: u.handle,
     rating: u.rating,
@@ -300,9 +317,9 @@ function trimRatedList(users, max = 100) {
   }));
 }
 
-function trimProblems(data) {
+function trimProblems(data: CFProblemsResponse) {
   const { problems = [], problemStatistics = [] } = data;
-  const statMap = {};
+  const statMap: Record<string, number> = {};
   problemStatistics.forEach(s => { statMap[`${s.contestId}-${s.index}`] = s.solvedCount; });
   return problems.slice(0, 300).map(p => ({
     contestId: p.contestId,
@@ -316,51 +333,56 @@ function trimProblems(data) {
 
 // ── Tool execution ────────────────────────────────────────────────────────────
 
-export async function executeTool(name, input) {
+export async function executeTool(name: string, input: Record<string, unknown>): Promise<unknown> {
   switch (name) {
     case 'get_user_info':
-      return cf.getUserInfo(input.handles);
+      return cf.getUserInfo(input.handles as string[]);
     case 'get_user_rating':
-      return cf.getUserRating(input.handle);
+      return cf.getUserRating(input.handle as string);
     case 'get_user_submissions':
-      return trimSubmissions(await cf.getUserSubmissions(input.handle, input.count ?? 200, input.from ?? 1), 200);
+      return trimSubmissions(
+        await cf.getUserSubmissions(input.handle as string, (input.count as number) ?? 200, (input.from as number) ?? 1),
+        200,
+      );
     case 'get_contest_list':
-      return trimContestList(await cf.getContestList(input.gym ?? false));
+      return trimContestList(await cf.getContestList((input.gym as boolean) ?? false));
     case 'get_contest_standings':
-      return cf.getContestStandings(input.contestId, input.from ?? 1, input.count ?? 10, input.handles ?? []);
+      return cf.getContestStandings(
+        input.contestId as number,
+        (input.from as number) ?? 1,
+        (input.count as number) ?? 10,
+        (input.handles as string[]) ?? [],
+      );
     case 'get_contest_status':
-      return cf.getContestStatus(input.contestId, input.handle ?? '', input.count ?? 20);
+      return cf.getContestStatus(input.contestId as number, (input.handle as string) ?? '', (input.count as number) ?? 20);
     case 'get_contest_rating_changes':
-      return cf.getContestRatingChanges(input.contestId);
+      return cf.getContestRatingChanges(input.contestId as number);
     case 'get_problems':
-      return trimProblems(await cf.getProblems(input.tags ?? [], input.problemsetName ?? ''));
+      return trimProblems(await cf.getProblems((input.tags as string[]) ?? [], (input.problemsetName as string) ?? ''));
     case 'get_recent_actions':
-      return cf.getRecentActions(input.maxCount ?? 20);
+      return cf.getRecentActions((input.maxCount as number) ?? 20);
     case 'get_rated_list':
-      return trimRatedList(await cf.getRatedList(input.activeOnly ?? true));
+      return trimRatedList(await cf.getRatedList((input.activeOnly as boolean) ?? true));
     case 'get_gym_simulations':
-      return getGymSimulations(input.handle, input.limit ?? 10);
+      return getGymSimulations(input.handle as string, (input.limit as number) ?? 10);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // ── History trimming — keep last N user/assistant turns to limit input tokens ──
-const MAX_HISTORY_TURNS = 4; // 4 turns = 8 messages (4 user + 4 assistant)
+const MAX_HISTORY_TURNS = 4;
 
-function trimHistory(msgs) {
-  // Always keep all messages, but if too many, drop oldest pairs (keep latest N turns)
-  const pairs = [];
+function trimHistory(msgs: ConversationMessage[]): ConversationMessage[] {
+  const pairs: [ConversationMessage, ConversationMessage][] = [];
   for (let i = 0; i < msgs.length - 1; i += 2) {
     if (msgs[i].role === 'user' && msgs[i + 1]?.role === 'assistant') {
       pairs.push([msgs[i], msgs[i + 1]]);
     }
   }
-  // Always include the last message (current user turn)
   const lastMsg = msgs[msgs.length - 1];
   const recentPairs = pairs.slice(-MAX_HISTORY_TURNS);
   const trimmed = recentPairs.flat();
-  // If the last message isn't already included, append it
   if (!trimmed.length || trimmed[trimmed.length - 1] !== lastMsg) {
     trimmed.push(lastMsg);
   }
@@ -369,36 +391,34 @@ function trimHistory(msgs) {
 
 // ── Streaming agentic loop ────────────────────────────────────────────────────
 
-/**
- * Run the agent with streaming. Writes SSE events to `res`.
- * SSE event formats:
- *   data: {"type":"text","content":"..."}
- *   data: {"type":"tool_call","name":"...","input":{...}}
- *   data: {"type":"tool_result","name":"...","success":true}
- *   data: {"type":"retrying","waitSeconds":N}
- *   data: {"type":"done"}
- *   data: {"type":"error","message":"..."}
- */
-export async function streamAgent(messages, res, model = 'claude-haiku-4-5-20251001') {
-  const writeSSE = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+export async function streamAgent(
+  messages: ConversationMessage[],
+  res: SSEWriter,
+  model = 'claude-haiku-4-5-20251001',
+): Promise<void> {
+  const writeSSE = (event: SSEEvent) => res.write(`data: ${JSON.stringify(event)}\n\n`);
 
-  // Trim history to cap input tokens, then convert to Anthropic format
-  const anthropicMessages = trimHistory(messages).map(m => ({
+  const anthropicMessages: Anthropic.MessageParam[] = trimHistory(messages).map(m => ({
     role: m.role,
     content: m.content,
   }));
 
-  // Stream iteration with retry on 429
-  async function* streamEventsWithRetry(params, maxRetries = 3) {
+  type StreamYield = { event: Anthropic.RawMessageStreamEvent; stream: ReturnType<typeof client.messages.stream> };
+
+  async function* streamEventsWithRetry(
+    params: Anthropic.MessageStreamParams,
+    maxRetries = 3,
+  ): AsyncGenerator<StreamYield> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const stream = client.messages.stream(params);
         for await (const event of stream) {
           yield { event, stream };
         }
-        return; // success — exit loop
+        return;
       } catch (err) {
-        const is429 = err?.status === 429 || err?.message?.includes('rate_limit');
+        const e = err as { status?: number; message?: string };
+        const is429 = e?.status === 429 || e?.message?.includes('rate_limit');
         if (is429 && attempt < maxRetries) {
           const waitSeconds = Math.min(60, 15 * (attempt + 1));
           writeSSE({ type: 'retrying', waitSeconds });
@@ -414,13 +434,13 @@ export async function streamAgent(messages, res, model = 'claude-haiku-4-5-20251
     let continueLoop = true;
 
     while (continueLoop) {
-      const toolUseBlocks = [];
-      let currentToolUse = null;
+      const toolUseBlocks: { id: string; name: string; input: Record<string, unknown> }[] = [];
+      let currentToolUse: { id: string; name: string; input: Record<string, unknown> } | null = null;
       let inputJsonBuffer = '';
-      let stopReason = null;
-      let lastStream = null;
+      let stopReason: string | null = null;
+      let lastStream: ReturnType<typeof client.messages.stream> | null = null;
 
-      const params = {
+      const params: Anthropic.MessageStreamParams = {
         model,
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
@@ -450,23 +470,24 @@ export async function streamAgent(messages, res, model = 'claude-haiku-4-5-20251
             inputJsonBuffer = '';
           }
         } else if (event.type === 'message_delta') {
-          stopReason = event.delta.stop_reason;
+          stopReason = event.delta.stop_reason ?? null;
         }
       }
 
-      const finalMessage = await lastStream.finalMessage();
+      const finalMessage = await lastStream!.finalMessage();
       anthropicMessages.push({ role: 'assistant', content: finalMessage.content });
 
       if (stopReason === 'tool_use' && toolUseBlocks.length > 0) {
-        const toolResults = [];
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
         for (const tool of toolUseBlocks) {
           try {
             const result = await executeTool(tool.name, tool.input);
             writeSSE({ type: 'tool_result', name: tool.name, success: true });
             toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: JSON.stringify(result) });
           } catch (err) {
-            writeSSE({ type: 'tool_result', name: tool.name, success: false, error: err.message });
-            toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: `Error: ${err.message}`, is_error: true });
+            const e = err as Error;
+            writeSSE({ type: 'tool_result', name: tool.name, success: false, error: e.message });
+            toolResults.push({ type: 'tool_result', tool_use_id: tool.id, content: `Error: ${e.message}`, is_error: true });
           }
         }
         anthropicMessages.push({ role: 'user', content: toolResults });
@@ -477,8 +498,9 @@ export async function streamAgent(messages, res, model = 'claude-haiku-4-5-20251
 
     writeSSE({ type: 'done' });
   } catch (err) {
-    console.error('Agent error:', err);
-    writeSSE({ type: 'error', message: err.message });
+    const e = err as Error;
+    console.error('Agent error:', e);
+    writeSSE({ type: 'error', message: e.message });
     writeSSE({ type: 'done' });
   }
 }
