@@ -141,7 +141,7 @@ describe('getGymRecommendations', () => {
       expect(recommendations.length).toBe(0);
     });
 
-    it('excludes submissions older than the default 6-month window', async () => {
+    it('excludes submissions older than the default 180-day window', async () => {
       mock.getUserSubmissions.mockImplementation(async (handle: string) => {
         if (handle === 'myuser') return [] as any;
         return [makeSub(GYM_A, 'VIRTUAL', OLD)] as any; // OLD is outside window
@@ -150,17 +150,17 @@ describe('getGymRecommendations', () => {
       expect(recommendations.length).toBe(0);
     });
 
-    it('includes submissions within a custom months window', async () => {
-      // A submission 10 months ago — outside 6 months but inside 12 months
-      const TEN_MONTHS_AGO = Math.floor(Date.now() / 1000) - 10 * 30 * 24 * 3600;
+    it('includes submissions within a custom days window', async () => {
+      // A submission 300 days ago — outside 180 days but inside 365 days
+      const THREE_HUNDRED_DAYS_AGO = Math.floor(Date.now() / 1000) - 300 * 24 * 3600;
       mock.getUserSubmissions.mockImplementation(async (handle: string) => {
         if (handle === 'myuser') return [] as any;
-        return [makeSub(GYM_A, 'VIRTUAL', TEN_MONTHS_AGO)] as any;
+        return [makeSub(GYM_A, 'VIRTUAL', THREE_HUNDRED_DAYS_AGO)] as any;
       });
-      const defaultResult = await getGymRecommendations(['myuser'], ['compA'], 5, 6);
-      const extendedResult = await getGymRecommendations(['myuser'], ['compA'], 5, 12);
-      expect(defaultResult.recommendations.length).toBe(0);  // outside 6 months
-      expect(extendedResult.recommendations.length).toBe(1); // inside 12 months
+      const defaultResult = await getGymRecommendations(['myuser'], ['compA'], 5, 180);
+      const extendedResult = await getGymRecommendations(['myuser'], ['compA'], 5, 365);
+      expect(defaultResult.recommendations.length).toBe(0);  // outside 180 days
+      expect(extendedResult.recommendations.length).toBe(1); // inside 365 days
     });
   });
 

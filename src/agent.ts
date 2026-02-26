@@ -168,7 +168,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'get_gym_recommendations',
-    description: 'Recommend gym contests for a team to simulate next, based on what competitor teams have recently practiced. Returns the most popular gyms (by number of teams) among competitors that the target team has NOT yet simulated. Only considers simulations from the last 6 months. Pass one handle per competitor team to minimise API calls.',
+    description: 'Recommend gym contests for a team to simulate next, based on what competitor teams have recently practiced. Returns the most popular gyms (by number of teams) among competitors that the target team has NOT yet simulated. Default lookback is 180 days (6 months); pass `days` to adjust (e.g. 30 for last month, 365 for last year). Pass one handle per competitor team to minimise API calls.',
     input_schema: {
       type: 'object',
       properties: {
@@ -183,7 +183,7 @@ const TOOLS: Anthropic.Tool[] = [
           description: 'One handle per competitor team (e.g. team captain). Each entry counts as one team.',
         },
         limit: { type: 'number', description: 'Number of recommendations to return (default 5)' },
-        months: { type: 'number', description: 'How many months back to look at competitor simulations (default 6)' },
+        days: { type: 'number', description: 'Lookback window in days (default 180 = 6 months). Use 7 for 1 week, 30 for 1 month, 365 for 1 year.' },
       },
       required: ['myHandles', 'competitorHandles'],
     },
@@ -236,8 +236,8 @@ interface StandingsEntry {
 export async function getGymSimulations(handle: string, limit = 10): Promise<GymSimulationsResult> {
   const sessions = new Map<string, SimSession>();
   let from = 1;
-  const pageSize = 500;
-  const maxPages = 4; // scan up to 2000 submissions
+  const pageSize = 1000;
+  const maxPages = 3; // scan up to 3000 submissions
 
   for (let page = 0; page < maxPages; page++) {
     const subs = await cf.getUserSubmissions(handle, pageSize, from);
@@ -335,10 +335,10 @@ export async function getGymRecommendations(
   myHandles: string[],
   competitorHandles: string[],
   limit = 5,
-  months = 6,
+  days = 180,
 ): Promise<GymRecommendationsResult> {
-  const cutoff = Date.now() / 1000 - months * 30 * 24 * 3600;
-  const PAGE_SIZE = 500;
+  const cutoff = Date.now() / 1000 - days * 24 * 3600;
+  const PAGE_SIZE = 1000;
 
   async function getRecentGymIds(handle: string): Promise<Set<number>> {
     const ids = new Set<number>();
@@ -461,7 +461,7 @@ export async function executeTool(name: string, input: Record<string, unknown>):
         input.myHandles as string[],
         input.competitorHandles as string[],
         (input.limit as number | undefined) ?? 5,
-        (input.months as number | undefined) ?? 6,
+        (input.days as number | undefined) ?? 180,
       );
     default:
       throw new Error(`Unknown tool: ${name}`);
