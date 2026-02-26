@@ -125,6 +125,26 @@ describe('executeTool — dispatch', () => {
     expect(result.handle).toBe('someone');
   });
 
+  it('get_gym_recommendations routes to getGymRecommendations (returns recommendations array)', async () => {
+    mock.getUserSubmissions.mockResolvedValue([]);
+    mock.getContestList.mockResolvedValue([]);
+    const result = await executeTool('get_gym_recommendations', {
+      myHandles: ['automac'],
+      competitorHandles: ['Drifter24'],
+    }) as any;
+    expect(Array.isArray(result.recommendations)).toBe(true);
+  });
+
+  it('get_gym_recommendations uses default limit of 5 when not specified', async () => {
+    mock.getUserSubmissions.mockResolvedValue([]);
+    mock.getContestList.mockResolvedValue([]);
+    const result = await executeTool('get_gym_recommendations', {
+      myHandles: ['automac'],
+      competitorHandles: ['Drifter24'],
+    }) as any;
+    expect(result.recommendations.length).toBeLessThanOrEqual(5);
+  });
+
   it('unknown tool throws with descriptive message', async () => {
     await expect(executeTool('get_unicorns', {})).rejects.toThrow('Unknown tool: get_unicorns');
   });

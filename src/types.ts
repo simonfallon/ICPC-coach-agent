@@ -209,9 +209,23 @@ export type ToolName =
   | 'get_problems'
   | 'get_recent_actions'
   | 'get_rated_list'
-  | 'get_gym_simulations';
+  | 'get_gym_simulations'
+  | 'get_gym_recommendations';
 
 // ── Gym simulation result ─────────────────────────────────────────────────────
+
+export interface GymRecommendation {
+  name: string;
+  link: string;
+  difficulty: string | null;
+  durationHours: number | null;
+  teamsSimulated: number;
+  totalCompetitorTeams: number;
+}
+
+export interface GymRecommendationsResult {
+  recommendations: GymRecommendation[];
+}
 
 export interface GymResult {
   name: string;

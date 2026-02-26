@@ -84,6 +84,14 @@ describe('Tool selection traces', { timeout: 30000 }, () => {
     expect(toolsUsed(events)).toContain('get_problems');
   });
 
+  it('gym recommendation query uses get_gym_recommendations', async () => {
+    if (!HAS_API_KEY) return;
+    const events = await runQuery(
+      'Recommend gyms for automac, juancs, elpepe123 based on what Drifter24, emoreira, Edu175 have been simulating in the past 6 months',
+    );
+    expect(toolsUsed(events)).toContain('get_gym_recommendations');
+  });
+
   it('standings query uses get_contest_standings', async () => {
     if (!HAS_API_KEY) return;
     const events = await runQuery('Who are the top 10 in contest 2035?');

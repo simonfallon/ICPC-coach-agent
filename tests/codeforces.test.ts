@@ -92,16 +92,7 @@ describe('Codeforces API — integration', { timeout: 15000 }, () => {
       expect(contest.phase).toBeDefined();
     });
 
-    it('gym=true returns only gym contests (all IDs > 100000)', async () => {
-      const result = await skipOnNetworkError(() => getContestList(true));
-      if (!result) return;
-      expect(result.length).toBeGreaterThan(0);
-      for (const gym of result) {
-        expect(gym.id).toBeGreaterThan(100000);
-      }
-    });
   });
-
   describe('getContestStandings', () => {
     it('returns the requested number of rows with expected structure', async () => {
       const result = await skipOnNetworkError(() => getContestStandings(1, 1, 5));

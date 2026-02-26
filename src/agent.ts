@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as cf from './codeforces.js';
 import type {
   CFSubmission, CFContest, CFUser, CFProblemsResponse,
-  SSEEvent, SSEWriter, ConversationMessage, GymSimulationsResult,
+  SSEEvent, SSEWriter, ConversationMessage, GymSimulationsResult, GymRecommendationsResult,
 } from './types.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -21,7 +21,9 @@ When answering questions, you MUST:
 For gym simulation questions ("last N gyms a user practiced/simulated"), ALWAYS use the \`get_gym_simulations\` tool — it handles the cross-referencing server-side efficiently.
 When presenting gym simulation results, format the contest name as a markdown link using the provided \`link\` field: e.g. \`[Contest Name](link)\`. Include the \`difficulty\` field as a column (e.g. ★★★☆☆) when present. Do NOT show a raw contestId column.
 
-Always present data in a helpful, organized way. If a user asks for "last N" items, sort by most recent first.`;
+Always present data in a helpful, organized way. If a user asks for "last N" items, sort by most recent first.
+
+For gym recommendation questions, use \`get_gym_recommendations\`. Pass one handle per competitor team in \`competitorHandles\` to keep API calls low. Present results as a table with columns: Contest (as markdown link), Difficulty, Duration (h), Teams Simulated (e.g. "3 / 5 teams").`;
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -164,6 +166,28 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['handle'],
     },
   },
+  {
+    name: 'get_gym_recommendations',
+    description: 'Recommend gym contests for a team to simulate next, based on what competitor teams have recently practiced. Returns the most popular gyms (by number of teams) among competitors that the target team has NOT yet simulated. Only considers simulations from the last 6 months. Pass one handle per competitor team to minimise API calls.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        myHandles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Handles of the target team (up to 3)',
+        },
+        competitorHandles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'One handle per competitor team (e.g. team captain). Each entry counts as one team.',
+        },
+        limit: { type: 'number', description: 'Number of recommendations to return (default 5)' },
+        months: { type: 'number', description: 'How many months back to look at competitor simulations (default 6)' },
+      },
+      required: ['myHandles', 'competitorHandles'],
+    },
+  },
 ];
 
 // ── Result trimming — keeps responses within Claude's context budget ──────────
@@ -212,8 +236,8 @@ interface StandingsEntry {
 export async function getGymSimulations(handle: string, limit = 10): Promise<GymSimulationsResult> {
   const sessions = new Map<string, SimSession>();
   let from = 1;
-  const pageSize = 100;
-  const maxPages = 20; // scan up to 2000 submissions
+  const pageSize = 500;
+  const maxPages = 4; // scan up to 2000 submissions
 
   for (let page = 0; page < maxPages; page++) {
     const subs = await cf.getUserSubmissions(handle, pageSize, from);
@@ -307,6 +331,73 @@ export async function getGymSimulations(handle: string, limit = 10): Promise<Gym
   };
 }
 
+export async function getGymRecommendations(
+  myHandles: string[],
+  competitorHandles: string[],
+  limit = 5,
+  months = 6,
+): Promise<GymRecommendationsResult> {
+  const cutoff = Date.now() / 1000 - months * 30 * 24 * 3600;
+  const PAGE_SIZE = 500;
+
+  async function getRecentGymIds(handle: string): Promise<Set<number>> {
+    const ids = new Set<number>();
+    let from = 1;
+    while (true) {
+      const subs = await cf.getUserSubmissions(handle, PAGE_SIZE, from);
+      if (!subs.length) break;
+      let hitOld = false;
+      for (const s of subs) {
+        if (s.creationTimeSeconds < cutoff) { hitOld = true; break; }
+        if ((s.contestId ?? 0) > 100000 && s.author?.participantType === 'VIRTUAL') {
+          ids.add(s.contestId!);
+        }
+      }
+      if (hitOld || subs.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return ids;
+  }
+
+  const myResults = await Promise.all(myHandles.map(getRecentGymIds));
+  const competitorResults = await Promise.all(competitorHandles.map(getRecentGymIds));
+
+  const mySimulated = new Set(myResults.flatMap(s => [...s]));
+
+  const teamCount = new Map<number, number>();
+  for (const ids of competitorResults) {
+    for (const id of ids) {
+      if (!mySimulated.has(id)) {
+        teamCount.set(id, (teamCount.get(id) ?? 0) + 1);
+      }
+    }
+  }
+
+  const candidates = [...teamCount.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
+
+  if (!candidates.length) return { recommendations: [] };
+
+  const gymList = await cf.getContestList(true);
+  const gymMap: Record<number, CFContest> = Object.fromEntries(gymList.map(g => [g.id, g]));
+
+  return {
+    recommendations: candidates.map(([contestId, count]) => {
+      const gym = gymMap[contestId];
+      const diff = gym?.difficulty;
+      return {
+        name: gym?.name ?? `Gym #${contestId}`,
+        link: `https://codeforces.com/gym/${contestId}`,
+        difficulty: diff ? '★'.repeat(diff) + '☆'.repeat(5 - diff) : null,
+        durationHours: gym?.durationSeconds ? Math.round(gym.durationSeconds / 3600) : null,
+        teamsSimulated: count,
+        totalCompetitorTeams: competitorHandles.length,
+      };
+    }),
+  };
+}
+
 function trimRatedList(users: CFUser[], max = 100) {
   return users.slice(0, max).map(u => ({
     handle: u.handle,
@@ -365,6 +456,13 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       return trimRatedList(await cf.getRatedList((input.activeOnly as boolean) ?? true));
     case 'get_gym_simulations':
       return getGymSimulations(input.handle as string, (input.limit as number) ?? 10);
+    case 'get_gym_recommendations':
+      return getGymRecommendations(
+        input.myHandles as string[],
+        input.competitorHandles as string[],
+        (input.limit as number | undefined) ?? 5,
+        (input.months as number | undefined) ?? 6,
+      );
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
